@@ -1,0 +1,214 @@
+#!/usr/bin/perl -w
+################################################################################
+#                                                                              #
+#        AUTOR: Víctor Rodríguez <vrodriguez@4eixos.com>                       #
+#                                                                              #
+#      FICHERO: checkCertificado                                               #
+#                                                                              #
+#  DESCRIPCION: comprobador simple de certificados en perl, necesita que se le #
+#               pasen los siguientes parametros:                               #
+#                   - dias: dias limite de aviso (defecto 20)                  #
+#                   - usuario: usuario de amazon ses (cifrado, ver ayuda)      #
+#                   - clave: clave de amazon ses (cifrado, ver ayuda)          #
+#                   - region: region de SES a usar                             #
+#                   - remitente: direccion que envia el correo                 #
+#                   - destino: a donde enviar el correo                        #
+#                   - dominio: dominio a comprobar certificado                 #
+#                                                                              #
+################################################################################
+use strict;
+use DateTime;
+use Getopt::Long;
+
+# --- CONFIGURACIONES ----------------------------------------------------------
+my $DIAS        = 20; # Dias para caducar
+my $REGION_SES  = 'eu-west-1';
+my $USUARIOSES  = '';
+my $PASSWDSES   = '';
+my $FROM        = '';
+my @TO          = ();
+my @DOMINIOS    = ();
+my $HELP        = 0; # Controla si se ha pedido la ayuda
+# ------------------------------------------------------------------------------
+
+# Parametros de la aplicacion 
+GetOptions(
+    'dias=i'      => \$DIAS,
+    'usuario=s'   => \$USUARIOSES,
+    'clave=s'     => \$PASSWDSES,
+    'region=s'    => \$REGION_SES,
+    'remitente=s' => \$FROM,
+    'destino=s'   => \@TO,
+    'dominio=s'   => \@DOMINIOS,
+    'help'        => \$HELP
+);
+
+if ( $HELP ) { 
+    &mostrarAyuda();
+    exit(0);
+}
+
+if ( !$USUARIOSES || !$PASSWDSES  
+        || !$FROM || !scalar(@TO) 
+        || !scalar(@DOMINIOS) ) {
+
+    print "Faltan parametros\n";
+    &mostrarAyuda();
+    exit(1);
+}
+
+# Ciframos los datos para SES
+$USUARIOSES = &cifrarParaSES($USUARIOSES);
+$PASSWDSES  = &cifrarParaSES($PASSWDSES);
+
+my $ahora = DateTime->now();
+my $caducidad;
+my $dias;
+
+foreach my $dominio (@DOMINIOS) {
+    $caducidad = &comprobarCertificado($dominio);
+    $dias = $caducidad->delta_days($ahora)->in_units('days');
+
+    print "El certificado de $dominio caduca el " . $caducidad->ymd() 
+        . " ($dias dias)\n";
+
+    if ( $dias < $DIAS ) {
+        print "Caduca en menos de $DIAS dias, enviamos aviso\n";
+        &enviarMail($dominio, $caducidad->ymd(), $dias);
+    }
+}
+
+exit(0);
+
+
+# --- METODOS AUXILIARES -------------------------------------------------------
+##
+#
+#     funcion: comprobarCertificado
+#
+# descripcion: Obtiene la fecha de expirtacion de un certificado para un dominio
+#              dado, mediante openssl.
+#
+#  parametros: string dominio (dominio a comprobar)
+#
+#  resultados: DateTime con la expiracion del dominio
+#
+sub comprobarCertificado {
+    my $dominio = shift;
+
+    my $comando = "date -d \"\$(echo | openssl s_client -servername $dominio "
+                . "-connect $dominio:443 2>/dev/null | openssl x509 -noout "
+                . "-enddate | cut -d= -f2- )\" +\%s";
+
+    my $caduca = `$comando`;
+
+    DateTime->from_epoch( epoch => $caduca );    
+}
+
+##
+#     funcion: enviarMail
+#
+# descripcion: Envia un correo con el aviso de que un certificado no ha sido
+#              renovado, su fecha de expiracion y los dias que faltan
+#
+#  parametros:
+#              string dominio (dominio del certificado)
+#              string fecha (fecha de expiracion)
+#              int dias (dias hasta fecha de expiracion)
+#
+#  resultados: --
+#
+sub enviarMail {
+    my $dominio = shift;
+    my $fecha = shift;
+    my $dias = shift || "menos de $DIAS \n";
+
+    my $envio = "EHLO 4eixos.com\n" . 
+                "AUTH LOGIN\n" .
+                "$USUARIOSES\n" .
+                "$PASSWDSES\n" .
+                "MAIL FROM: $FROM\n";
+    foreach my $destinatario ( @TO ) {
+        $envio .= "RCPT TO: $destinatario\n";
+    }
+
+    $envio .= "DATA\n" 
+            . "From: $FROM\n"
+            . "To:" . join(', ', @TO) . "\n"
+            . "Subject: El certificado de $dominio caducara en $dias dias\n\n"
+            . "El certificado ya deberia de haberse renovado, se ha superado "
+            . "el limite de $DIAS dias. Detalles:\n"
+            . "\t- Dominio: $dominio\n"
+            . "\t- Caducidad: $fecha\n"
+            . "\t- Tiempo restante: $dias dias\n"
+            . ".\n"
+            . "QUIT\n";
+
+    open ( ENVIO, '|/usr/bin/openssl s_client -crlf -quiet -starttls smtp '
+                . '-connect email-smtp.'.$REGION_SES.'.amazonaws.com:587' );
+    print ENVIO $envio;
+    sleep(2);
+    close ENVIO;
+}
+
+
+##
+#
+#     funcion: cifrarParaSES 
+#
+# descripcion: Aplica el cifrado necesario para pasar usuarios y passwords a
+#              Amazon SES 
+#
+#  parametros: string texto (cadena a cifrar)
+#
+#  resultados: string con la cadena cifrada 
+#
+sub cifrarParaSES {
+    my $cifrado = `echo -n "$_[0]" | openssl enc -base64`;
+    chomp( $cifrado );
+    return $cifrado;
+}
+
+
+##
+#
+#     funcion: mostrarAyuda 
+#
+# descripcion: Muestra la ayuda del comando
+#
+#  parametros: -- 
+#
+#  resultados: -- 
+#
+sub mostrarAyuda {
+    local $/ = undef;
+    my $ayuda = <DATA>;
+    print $ayuda;
+}
+
+# ------------------------------------------------------------------------------
+
+__DATA__
+Comprobacion de caducidad de certificados
+
+Uso
+  checkCertificado --parametro valor --parametro2 valor --dominio midominio.com
+
+Parametros 
+
+  dias: Numero de dias para avisar de caducidad de dominio. Parametro opcional,
+        por defecto 20 dias.
+  
+  usuario: Usuario de Amazon SES (obligatorio).
+
+  clave: Password para Amazon SES (obligatorio).
+
+  region: Region de Amazon SES a utilizar. Por defecto eu-west-1
+
+  remitente: Quien envia el correo (obligatorio)
+
+  destino: A quien se envia el correo (obligatorio). Puede repetirse para usar
+           multiples destinatarios
+
+  dominio: Dominio al que se le comprueba el certificado (obligatorio). Puede
+           repetirse para especificar multoples dominios
