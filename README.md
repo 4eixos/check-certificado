@@ -28,3 +28,8 @@ docker run --rm -ti 4eixos/check-certificado \
                     --dominio example.org \
                     --dominio example.es
 ```
+## Crear el contenedor
+
+Para poder crear la imagen es necesario descargar el scirpt de envío de mensajes a slack de [Kirby Rs](https://gist.github.com/andkirby) que se puede encontrar en [este gist](https://gist.github.com/andkirby/67a774513215d7ba06384186dd441d9e) y guardarlo en la raíz del proyecto con el nombre slack.
+
+Una vez hecho esto, podemos crear la imagen de docker con docker build como haríamos habitualmente.

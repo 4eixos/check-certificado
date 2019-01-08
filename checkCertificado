@@ -28,6 +28,8 @@ my $PASSWDSES   = '';
 my $FROM        = '';
 my @TO          = ();
 my @DOMINIOS    = ();
+my $SLACK_URL   = ''; # URL de slack
+my $SLACK_CH    = ''; # Canal de slack
 my $HELP        = 0; # Controla si se ha pedido la ayuda
 # ------------------------------------------------------------------------------
 
@@ -40,6 +42,8 @@ GetOptions(
     'remitente=s' => \$FROM,
     'destino=s'   => \@TO,
     'dominio=s'   => \@DOMINIOS,
+    'slackurl=s'  => \$SLACK_URL,
+    'slackch=s'   => \$SLACK_CH,
     'help'        => \$HELP
 );
 
@@ -74,6 +78,10 @@ foreach my $dominio (@DOMINIOS) {
 
     if ( $dias < $DIAS ) {
         print "Caduca en menos de $DIAS dias, enviamos aviso\n";
+        &notificarSlack(
+            "El certificado de $dominio caduca el " . $caducidad->ymd() .
+            " ($dias dias)"
+        );
         &enviarMail($dominio, $caducidad->ymd(), $dias);
     }
 }
@@ -167,6 +175,27 @@ sub cifrarParaSES {
     my $cifrado = `echo -n "$_[0]" | openssl enc -base64`;
     chomp( $cifrado );
     return $cifrado;
+}
+
+
+##
+#
+#     funcion: notificarSlack 
+#
+# descripcion: Envia un mensaje a un canal de slack 
+#
+#  parametros: string texto (mensaje a enviar)
+#
+#  resultados: ---
+#
+sub notificarSlack {
+    #if ( ( -x '/bin/slack' ) && ($SLACK_URL ne '') && ($SLACK_CH ne '') ){
+    if ( -x '/bin/slack' ){
+        $ENV{APP_SLACK_WEBHOOK} = $SLACK_URL;
+        print "Enviando mensaje a canal #" . $SLACK_CH . "usando $SLACK_URL\n";
+        my $comando = 
+        system("/bin/slack '#" . $SLACK_CH . "' '" . $_[0] . "'");
+    }
 }
 
 
