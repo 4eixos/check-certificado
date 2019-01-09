@@ -12,6 +12,8 @@ Comprobación de caducidad de certificados y notificación de caducidad vía e-m
   * **remitente:** Quien envía el correo (obligatorio). Debe ser de un dominio valido para la cuenta de Amazon SES.
   * **destino:** A quien se envía el correo (obligatorio). Puede repetirse para usar múltiples destinatarios.
   * **dominio:** Dominio al que se le comprueba el certificado (obligatorio). Puede repetirse para especificar múltiples dominios.
+  * **slackurl:** URL para envío de notificaciones a slack
+  * **slackch:** Canal al que enviamos la notificación.
 
 ## Uso
 
@@ -24,6 +26,8 @@ docker run --rm -ti 4eixos/check-certificado \
                     --region eu-west-1 \
                     --remitente mail@example.com \
                     --destino mail2@example.com \
+                    --slackurl https://slacl.url/hash \
+                    --slackch micanal \
                     --dominio example.com \
                     --dominio example.org \
                     --dominio example.es
