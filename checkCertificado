@@ -17,8 +17,8 @@
 #                                                                              #
 ################################################################################
 use strict;
-use DateTime;
 use Getopt::Long;
+use DateTime;
 
 # --- CONFIGURACIONES ----------------------------------------------------------
 my $DIAS        = 20; # Dias para caducar
@@ -70,7 +70,18 @@ my $caducidad;
 my $dias;
 
 foreach my $dominio (@DOMINIOS) {
-    $caducidad = &comprobarCertificado($dominio);
+    eval {
+        $caducidad = &comprobarCertificado( $dominio );
+    };
+    if ( $@ ) {
+        print "No se ha podido comprobar el certificado de $dominio\n";
+        &avisarErrorComprobacion( $dominio );
+        &notificarSlack(
+            "El certificado de $dominio no se ha podido validar"
+        );
+        next;
+    }
+    
     $dias = $caducidad->delta_days($ahora)->in_units('days');
 
     print "El certificado de $dominio caduca el " . $caducidad->ymd() 
@@ -82,7 +93,7 @@ foreach my $dominio (@DOMINIOS) {
             "El certificado de $dominio caduca el " . $caducidad->ymd() .
             " ($dias dias)"
         );
-        &enviarMail($dominio, $caducidad->ymd(), $dias);
+        &enviarCaducidad($dominio, $caducidad->ymd(), $dias);
     }
 }
 
@@ -104,17 +115,26 @@ exit(0);
 sub comprobarCertificado {
     my $dominio = shift;
 
-    my $comando = "date -d \"\$(echo | openssl s_client -servername $dominio "
-                . "-connect $dominio:443 2>/dev/null | openssl x509 -noout "
-                . "-enddate | cut -d= -f2- )\" +\%s";
+    my $fechas = `true | openssl s_client -connect $dominio:443 2>/dev/null | openssl x509 -noout -dates`;
 
-    my $caduca = `$comando`;
+    my $expiracion = undef;
 
-    DateTime->from_epoch( epoch => $caduca );    
+    foreach my $linea ( split(/\n/, $fechas) ) {
+        if ( $linea =~ /^\s*notAfter\s*\=(.+)$/ ) {
+            $expiracion = `date -d "$1" +%s`;
+            last;
+        }
+    }
+
+    unless ( $expiracion && $expiracion =~ /^\d+$/ ) {
+        die( "No se ha podido obtener una fecha de expiracion valida" );
+    }
+
+    return DateTime->from_epoch( epoch => $expiracion );
 }
 
 ##
-#     funcion: enviarMail
+#     funcion: enviarCaducidad
 #
 # descripcion: Envia un correo con el aviso de que un certificado no ha sido
 #              renovado, su fecha de expiracion y los dias que faltan
@@ -126,10 +146,60 @@ sub comprobarCertificado {
 #
 #  resultados: --
 #
-sub enviarMail {
+sub enviarCaducidad {
     my $dominio = shift;
     my $fecha = shift;
     my $dias = shift || "menos de $DIAS \n";
+    
+    my $asunto  = "El certificado de $dominio caducara en $dias dias";
+    my $mensaje = "El certificado ya deberia de haberse renovado, se ha superado "
+                . "el limite de $DIAS dias. Detalles:\n"
+                . "\t- Dominio: $dominio\n"
+                . "\t- Caducidad: $fecha\n"
+                . "\t- Tiempo restante: $dias dias";
+    
+    &enviarMail( $asunto, $mensaje);
+}
+
+##
+#     funcion: avisarErrorComprobacion
+#
+# descripcion: Envia un correo de aviso cuando un certificado no se ha
+#              podido comprobar
+#
+#  parametros:
+#              string dominio (dominio del certificado)
+#              string fecha (fecha de expiracion)
+#              int dias (dias hasta fecha de expiracion)
+#
+#  resultados: --
+#
+sub avisarErrorComprobacion {
+    my $dominio = shift;
+    
+    my $asunto  = "El certificado de $dominio no se ha podido comprobar";
+    my $mensaje = "Error comprobando certificado para $dominio. "
+                . "Comprueba que:\n"
+                . "\t- El dominio resuelve.\n"
+                . "\t- El servidor responde por SSL.";
+    
+    &enviarMail( $asunto, $mensaje);
+}
+
+##
+#     funcion: enviarMail
+#
+# descripcion: Envia un correo a traves de Amazon SES
+#
+#  parametros:
+#              string asunto (asunto del mensaje)
+#              string mensaje (cuerpo del correo)
+#
+#  resultados: --
+#
+sub enviarMail {
+    my $asunto = shift;
+    my $mensaje = shift;
 
     my $envio = "EHLO 4eixos.com\n" . 
                 "AUTH LOGIN\n" .
@@ -143,13 +213,8 @@ sub enviarMail {
     $envio .= "DATA\n" 
             . "From: $FROM\n"
             . "To:" . join(', ', @TO) . "\n"
-            . "Subject: El certificado de $dominio caducara en $dias dias\n\n"
-            . "El certificado ya deberia de haberse renovado, se ha superado "
-            . "el limite de $DIAS dias. Detalles:\n"
-            . "\t- Dominio: $dominio\n"
-            . "\t- Caducidad: $fecha\n"
-            . "\t- Tiempo restante: $dias dias\n"
-            . ".\n"
+            . "Subject: $asunto\n\n"
+            . $mensaje . "\n.\n"
             . "QUIT\n";
 
     open ( ENVIO, '|/usr/bin/openssl s_client -crlf -quiet -starttls smtp '
@@ -189,12 +254,14 @@ sub cifrarParaSES {
 #  resultados: ---
 #
 sub notificarSlack {
-    #if ( ( -x '/bin/slack' ) && ($SLACK_URL ne '') && ($SLACK_CH ne '') ){
-    if ( -x '/bin/slack' ){
+    if ( ( -x '/bin/slack' ) && ($SLACK_URL ne '') && ($SLACK_CH ne '') ){
         $ENV{APP_SLACK_WEBHOOK} = $SLACK_URL;
         print "Enviando mensaje a canal #" . $SLACK_CH . "usando $SLACK_URL\n";
         my $comando = 
         system("/bin/slack '#" . $SLACK_CH . "' '" . $_[0] . "'");
+    }
+    else {
+        print "No se envia mensaje a Slack por no estar configurado\n";
     }
 }
 
