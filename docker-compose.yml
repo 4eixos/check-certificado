@@ -1,0 +1,7 @@
+version: '3'
+
+services:
+  certificados:
+    image: 4eixos/check-certificado
+    volumes:
+      - ./checkCertificado:/bin/checkCertificado
