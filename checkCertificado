@@ -108,14 +108,16 @@ exit(0);
 # descripcion: Obtiene la fecha de expirtacion de un certificado para un dominio
 #              dado, mediante openssl.
 #
-#  parametros: string dominio (dominio a comprobar)
+#  parametros: string dominio (dominio a comprobar, puede incluir :puerto)
 #
 #  resultados: DateTime con la expiracion del dominio
 #
 sub comprobarCertificado {
     my $dominio = shift;
 
-    my $fechas = `true | openssl s_client -connect $dominio:443 2>/dev/null | openssl x509 -noout -dates`;
+    $dominio = "$dominio:443" unless( $dominio =~ /\:\d+$/ );
+
+    my $fechas = `true | openssl s_client -connect $dominio 2>/dev/null | openssl x509 -noout -dates`;
 
     my $expiracion = undef;
 
