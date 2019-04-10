@@ -2,6 +2,6 @@ version: '3'
 
 services:
   certificados:
-    image: 4eixos/check-certificado
+    build: .
     volumes:
       - ./checkCertificado:/bin/checkCertificado

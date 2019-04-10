@@ -21,19 +21,19 @@ use Getopt::Long;
 use DateTime;
 
 # --- CONFIGURACIONES ----------------------------------------------------------
-my $DIAS        = 20; # Dias para caducar
-my $REGION_SES  = 'eu-west-1';
-my $USUARIOSES  = '';
-my $PASSWDSES   = '';
-my $FROM        = '';
-my @TO          = ();
-my @DOMINIOS    = ();
-my $SLACK_URL   = ''; # URL de slack
-my $SLACK_CH    = ''; # Canal de slack
-my $HELP        = 0; # Controla si se ha pedido la ayuda
+my $DIAS        =   20;                  # Dias para caducar
+my $REGION_SES  =   'eu-west-1';         # Region de SES
+my $USUARIOSES  =   '';                  # Usuario de SES
+my $PASSWDSES   =   '';                  # Clave de SES
+my $FROM        =   '';                  # Remitente del correo
+my @TO          =   ();                  # Destino del correo
+my @DOMINIOS    =   ();                  # Dominios a revisar
+my $SLACK_URL   =   '';                  # URL de slack
+my $SLACK_CH    =   '';                  # Canal de slack
+my $HELP        =    0;                  # Controla si se ha pedido la ayuda
 # ------------------------------------------------------------------------------
 
-# Parametros de la aplicacion 
+# Lectura de parametros 
 GetOptions(
     'dias=i'      => \$DIAS,
     'usuario=s'   => \$USUARIOSES,
@@ -100,7 +100,8 @@ foreach my $dominio (@DOMINIOS) {
 exit(0);
 
 
-# --- METODOS AUXILIARES -------------------------------------------------------
+# ------------------------------------------------------------------------------
+
 ##
 #
 #     funcion: comprobarCertificado
@@ -123,7 +124,8 @@ sub comprobarCertificado {
 
     foreach my $linea ( split(/\n/, $fechas) ) {
         if ( $linea =~ /^\s*notAfter\s*\=(.+)$/ ) {
-            $expiracion = `date -d "$1" +%s`;
+            # Nos aseguramos de tomar el timestamp como entero (evita errores con DateTime)
+            $expiracion = int `date -d "$1" +%s`;
             last;
         }
     }
@@ -310,3 +312,8 @@ Parametros
 
   dominio: Dominio al que se le comprueba el certificado (obligatorio). Puede
            repetirse para especificar multoples dominios
+
+  slackurl: URL para el envio de mensaje de notificacion a traves de Slack
+
+  slackch: Canal para el envio de mensaje de notificacion a traves de Slack
+
