@@ -118,7 +118,7 @@ sub comprobarCertificado {
 
     $dominio = "$dominio:443" unless( $dominio =~ /\:\d+$/ );
 
-    my $fechas = `true | openssl s_client -connect $dominio 2>/dev/null | openssl x509 -noout -dates`;
+    my $fechas = `true | openssl s_client -servername $dominio -connect $dominio 2>/dev/null | openssl x509 -noout -dates`;
 
     my $expiracion = undef;
 
